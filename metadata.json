@@ -1,0 +1,5 @@
+{
+  "name": "Ski Shooter 3D",
+  "description": "A 3D-perspective ski jumping and shooting game where you must jump over hills, shoot snowmen, and collect carrots to score points. The game speed increases with each 15-second level. Built for desktop and mobile.",
+  "requestFramePermissions": []
+}
