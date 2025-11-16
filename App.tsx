@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { GameEntity, EntityType, PlayerState, GameStatus } from './types';
 import * as C from './constants';
@@ -23,6 +24,7 @@ const App: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(C.LEVEL_DURATION);
   const [lives, setLives] = useState(C.INITIAL_LIVES);
   const [isShooting, setIsShooting] = useState(false);
+  const [highScores, setHighScores] = useState<number[]>([]);
   
   const playerState = useRef<PlayerState>({ y: 0, isJumping: false, jumpVelocity: 0, x: 0 });
   const entities = useRef<GameEntity[]>([]);
@@ -35,13 +37,20 @@ const App: React.FC = () => {
   const playSound = useCallback((sound: keyof typeof soundUrls) => {
     const audio = new Audio(soundUrls[sound]);
     audio.play().catch(e => {
-      // Autoplay policy can prevent playback before user interaction.
-      // We can safely ignore this specific error.
       if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
         console.error(`Audio play failed for sound "${sound}":`, e);
       }
     });
   }, []);
+
+  const updateHighScores = useCallback((newScore: number) => {
+    const scores = [...highScores, newScore];
+    scores.sort((a, b) => b - a);
+    const newHighScores = scores.slice(0, 5); // Keep top 5
+    setHighScores(newHighScores);
+    localStorage.setItem('skiShooterHighScores', JSON.stringify(newHighScores));
+  }, [highScores]);
+
 
   const startGame = useCallback(() => {
     setLevel(1);
@@ -55,15 +64,22 @@ const App: React.FC = () => {
     playSound('start');
   }, [playSound]);
 
+  const togglePause = useCallback(() => {
+    if (gameStatus === 'playing' || gameStatus === 'paused') {
+        setGameStatus(s => s === 'playing' ? 'paused' : 'playing');
+    }
+  }, [gameStatus]);
+
   const handleJump = useCallback(() => {
-    if (!playerState.current.isJumping) {
+    if (!playerState.current.isJumping && gameStatus === 'playing') {
       playerState.current.isJumping = true;
       playerState.current.jumpVelocity = C.JUMP_FORCE;
       playSound('jump');
     }
-  }, [playSound]);
+  }, [playSound, gameStatus]);
 
   const handleShoot = useCallback(() => {
+    if (gameStatus !== 'playing') return;
     entities.current.push({
       id: Date.now(),
       type: EntityType.Bullet,
@@ -74,18 +90,20 @@ const App: React.FC = () => {
     playSound('shoot');
     setIsShooting(true);
     setTimeout(() => setIsShooting(false), 200);
-  }, [playSound]);
+  }, [playSound, gameStatus]);
 
-  const handleMove = useCallback((e: MouseEvent | TouchEvent) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
     if (gameStatus !== 'playing') return;
-    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
     const screenWidth = window.innerWidth;
-    const newX = ((clientX / screenWidth) - 0.5) * 100; // -50 to 50
+    const newX = ((e.clientX / screenWidth) - 0.5) * 100; // -50 to 50
     playerState.current.x = Math.max(-45, Math.min(45, newX));
   }, [gameStatus]);
 
   const gameLoop = useCallback((timestamp: number) => {
-    if (gameStatus !== 'playing') return;
+    if (gameStatus !== 'playing') {
+        animationFrameId.current = requestAnimationFrame(gameLoop);
+        return;
+    };
     if (lastTime.current === 0) {
         lastTime.current = timestamp;
     }
@@ -109,10 +127,9 @@ const App: React.FC = () => {
 
     // Update entities
     entities.current = entities.current.map(e => {
-        // Bullets move away from the player (decreasing z), other entities move towards (increasing z)
         const zIncrement = e.type === EntityType.Bullet ? -gameSpeed.current * 5 * deltaTime : gameSpeed.current * deltaTime;
         return {...e, z: e.z + zIncrement};
-    }).filter(e => e.z > -5 && e.z < C.MAX_Z); // Allow bullet to travel slightly past horizon
+    }).filter(e => e.z > -5 && e.z < C.MAX_Z);
 
     // Collision detection
     let scoreUpdate = 0;
@@ -137,6 +154,7 @@ const App: React.FC = () => {
                         const newLives = l - 1;
                         if (newLives <= 0) {
                             setGameStatus('gameOver');
+                            updateHighScores(score);
                             playSound('gameOver');
                         }
                         return newLives;
@@ -193,11 +211,22 @@ const App: React.FC = () => {
 
     forceUpdate();
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [gameStatus, level, playSound]);
+  }, [gameStatus, level, playSound, score, updateHighScores]);
   
   const [, setTick] = useState(0);
   const forceUpdate = useCallback(() => setTick(tick => tick + 1), []);
   
+  useEffect(() => {
+    try {
+        const storedScores = localStorage.getItem('skiShooterHighScores');
+        if (storedScores) {
+            setHighScores(JSON.parse(storedScores));
+        }
+    } catch (error) {
+        console.error("Failed to load high scores:", error);
+    }
+  }, []);
+
   useEffect(() => {
     if (gameStatus === 'playing') {
       lastTime.current = 0;
@@ -209,7 +238,7 @@ const App: React.FC = () => {
   }, [gameStatus, gameLoop]);
 
   useEffect(() => {
-    if (gameStatus !== 'playing' || timeLeft <= 0) return;
+    if (gameStatus !== 'playing') return;
     const timer = setInterval(() => {
       setTimeLeft(t => {
         if (t <= 1) {
@@ -223,10 +252,11 @@ const App: React.FC = () => {
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [timeLeft, gameStatus, level, playSound]);
+  }, [gameStatus, level, playSound]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'KeyP') togglePause();
       if (gameStatus !== 'playing') return;
       if (e.code === 'Space') handleJump();
       if (e.code === 'KeyF') handleShoot();
@@ -240,31 +270,29 @@ const App: React.FC = () => {
     
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
-    window.addEventListener('mousemove', handleMove);
-    window.addEventListener('touchmove', handleMove);
-    // Add touch handlers for mobile jump/shoot
-    const handleTouchStart = (e: TouchEvent) => {
-        if (gameStatus !== 'playing') return;
-        // prevent default to avoid scrolling/zooming
-        e.preventDefault();
-        const touchX = e.touches[0].clientX;
-        const screenWidth = window.innerWidth;
-        if (touchX < screenWidth / 2) {
-            handleJump();
-        } else {
-            handleShoot();
-        }
-    }
-    window.addEventListener('touchstart', handleTouchStart, { passive: false });
+    window.addEventListener('mousemove', handleMouseMove);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
-      window.removeEventListener('mousemove', handleMove);
-      window.removeEventListener('touchmove', handleMove);
-      window.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [handleJump, handleShoot, handleMove, gameStatus]);
+  }, [handleJump, handleShoot, handleMouseMove, gameStatus, togglePause]);
+
+    // Mobile controls handlers
+    const handleMoveStart = (direction: 'left' | 'right', e: React.TouchEvent) => {
+        e.preventDefault();
+        moveState.current[direction] = true;
+    };
+    const handleMoveEnd = (direction: 'left' | 'right', e: React.TouchEvent) => {
+        e.preventDefault();
+        moveState.current[direction] = false;
+    };
+    const handleAction = (action: 'jump' | 'shoot', e: React.TouchEvent) => {
+        e.preventDefault();
+        if (action === 'jump') handleJump();
+        if (action === 'shoot') handleShoot();
+    }
   
   return (
     <main className="h-screen w-screen bg-slate-900 text-white flex flex-col items-center justify-center overflow-hidden font-mono select-none">
@@ -285,13 +313,21 @@ const App: React.FC = () => {
               gameStatus={gameStatus}
             />
         </div>
-        <UI score={score} level={level} timeLeft={timeLeft} gameStatus={gameStatus} lives={lives} onStart={startGame} />
+        <UI score={score} level={level} timeLeft={timeLeft} gameStatus={gameStatus} lives={lives} highScores={highScores} onStart={startGame} onTogglePause={togglePause} />
       </div>
 
        {gameStatus === 'playing' && (
-        <div className="absolute bottom-0 left-0 right-0 h-1/4 flex md:hidden z-20">
-            <div className="w-1/2 h-full bg-blue-500/30 active:bg-blue-500/50 flex justify-center items-center text-2xl font-bold"><p>JUMP</p></div>
-            <div className="w-1/2 h-full bg-red-500/30 active:bg-red-500/50 flex justify-center items-center text-2xl font-bold"><p>SHOOT</p></div>
+        <div className="absolute bottom-5 left-5 right-5 h-24 flex justify-between items-center md:hidden z-20 pointer-events-none">
+            {/* D-Pad */}
+            <div className="flex gap-2 pointer-events-auto">
+                <button onTouchStart={(e) => handleMoveStart('left', e)} onTouchEnd={(e) => handleMoveEnd('left', e)} className="w-16 h-16 bg-white/20 active:bg-white/40 rounded-full text-4xl flex justify-center items-center">‹</button>
+                <button onTouchStart={(e) => handleMoveStart('right', e)} onTouchEnd={(e) => handleMoveEnd('right', e)} className="w-16 h-16 bg-white/20 active:bg-white/40 rounded-full text-4xl flex justify-center items-center">›</button>
+            </div>
+            {/* Action Buttons */}
+            <div className="flex gap-2 pointer-events-auto">
+                <button onTouchStart={(e) => handleAction('shoot', e)} className="w-16 h-16 bg-red-500/50 active:bg-red-500/70 rounded-full font-bold text-xl">SHOOT</button>
+                <button onTouchStart={(e) => handleAction('jump', e)} className="w-16 h-16 bg-blue-500/50 active:bg-blue-500/70 rounded-full font-bold text-xl">JUMP</button>
+            </div>
         </div>
         )}
       

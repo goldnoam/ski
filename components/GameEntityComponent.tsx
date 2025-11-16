@@ -31,7 +31,7 @@ const GameEntityComponent: React.FC<GameEntityProps> = ({ entity }) => {
       case EntityType.Bullet:
         return (
           <div 
-            className="w-4 h-4 bg-yellow-300 rounded-full shadow-lg shadow-yellow-300/50" 
+            className="w-2 h-5 bg-yellow-300 rounded-full shadow-[0_0_15px_5px_rgba(253,249,168,0.7)]" 
             style={{ transform: `scale(${perspectiveScale})` }}>
           </div>
         );

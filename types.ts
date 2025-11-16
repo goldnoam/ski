@@ -21,4 +21,4 @@ export interface PlayerState {
   x: number; // side-to-side position
 }
 
-export type GameStatus = 'idle' | 'playing' | 'gameOver';
+export type GameStatus = 'idle' | 'playing' | 'paused' | 'gameOver';
