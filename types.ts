@@ -8,6 +8,7 @@ export enum EntityType {
   Fox = 'fox',
   PolarBear = 'polar_bear',
   PowerUp = 'powerup',
+  Trail = 'trail',
 }
 
 export interface GameEntity {
@@ -17,6 +18,9 @@ export interface GameEntity {
   z: number; // position down the slope (0 to 100)
   y: number; // height off the ground
   vx?: number; // horizontal velocity
+  life?: number; // for effects like trails
+  maxLife?: number; // for effects like trails
+  variant?: number; // for visual variations
 }
 
 export interface PlayerState {

@@ -9,13 +9,13 @@ import SnowParticles from './components/SnowParticles';
 import Clouds from './components/Clouds';
 
 const soundUrls = {
-    start: 'https://actions.google.com/sounds/v1/games/level_up.ogg',
-    collect: 'https://actions.google.com/sounds/v1/coins/coin_gain.ogg',
-    shoot: 'https://actions.google.com/sounds/v1/weapons/laser_shoot.ogg',
-    hit: 'https://actions.google.com/sounds/v1/impacts/hit_by_projectile.ogg',
-    gameOver: 'https://actions.google.com/sounds/v1/games/game_over_lose.ogg',
-    jump: 'https://actions.google.com/sounds/v1/impacts/jump_land.ogg',
-    powerUp: 'https://actions.google.com/sounds/v1/power_ups/power_up_1.ogg',
+    start: 'https://cdn.pixabay.com/audio/2022/11/17/audio_88f2cd3a2d.mp3',
+    collect: 'https://cdn.pixabay.com/audio/2022/03/15/audio_1b16234551.mp3',
+    shoot: 'https://cdn.pixabay.com/audio/2022/03/19/audio_d13a806950.mp3',
+    hit: 'https://cdn.pixabay.com/audio/2022/03/13/audio_0c732646a7.mp3',
+    gameOver: 'https://cdn.pixabay.com/audio/2022/04/08/audio_51452a2655.mp3',
+    jump: 'https://cdn.pixabay.com/audio/2021/08/04/audio_12b0c345c2.mp3',
+    powerUp: 'https://cdn.pixabay.com/audio/2022/10/28/audio_3c34a93551.mp3',
 };
 
 
@@ -138,17 +138,42 @@ const App: React.FC = () => {
 
 
     // Update entities
-    entities.current = entities.current.map(e => {
+    const newEntities: GameEntity[] = [];
+    for (const e of entities.current) {
         const zIncrement = e.type === EntityType.Bullet ? -gameSpeed.current * 5 * deltaTime : gameSpeed.current * deltaTime;
         let newX = e.x;
         if (e.type === EntityType.Fox && e.vx) {
-            newX += e.vx * (deltaTime / 16); // Frame-rate independent movement
+            newX += e.vx * (deltaTime / 16);
             if ((newX > 45 && e.vx > 0) || (newX < -45 && e.vx < 0)) {
                 e.vx *= -1;
             }
         }
-        return {...e, z: e.z + zIncrement, x: newX};
-    }).filter(e => e.z > -5 && e.z < C.MAX_Z);
+
+        let newLife = e.life;
+        if (e.type === EntityType.Trail && e.life !== undefined) {
+            newLife = e.life - (deltaTime / 300); // Fades in 300ms
+        }
+
+        const updatedEntity = {...e, z: e.z + zIncrement, x: newX, life: newLife};
+
+        // Keep entity if it's on screen and alive
+        if (updatedEntity.z > -5 && updatedEntity.z < C.MAX_Z && (updatedEntity.type !== EntityType.Trail || (updatedEntity.life && updatedEntity.life > 0))) {
+            newEntities.push(updatedEntity);
+        }
+        
+        // If it's a bullet, spawn a trail particle
+        if (updatedEntity.type === EntityType.Bullet) {
+            newEntities.push({
+                id: Math.random() + Date.now(),
+                type: EntityType.Trail,
+                x: updatedEntity.x,
+                y: updatedEntity.y,
+                z: updatedEntity.z + 1, // Just behind the bullet head
+                life: 1,
+            });
+        }
+    }
+    entities.current = newEntities;
     
     // Turbo fire
     timeSinceLastShot.current += deltaTime;
@@ -260,18 +285,19 @@ const App: React.FC = () => {
       timeSinceLastSpawn.current = 0;
       const entityType = Math.random();
       const xPos = Math.random() * 80 - 40;
+      const variant = Math.floor(Math.random() * 3);
 
       if (entityType < 0.20) { // Snowman 20%
-        entities.current.push({ id: Date.now(), type: EntityType.Snowman, x: xPos, y: 0, z: 0 });
+        entities.current.push({ id: Date.now(), type: EntityType.Snowman, x: xPos, y: 0, z: 0, variant });
       } else if (entityType < 0.30) { // Husky 10%
-        entities.current.push({ id: Date.now(), type: EntityType.Husky, x: xPos, y: 0, z: 0 });
+        entities.current.push({ id: Date.now(), type: EntityType.Husky, x: xPos, y: 0, z: 0, variant });
       } else if (entityType < 0.35) { // Cat 5%
-        entities.current.push({ id: Date.now(), type: EntityType.Cat, x: xPos, y: 0, z: 0 });
+        entities.current.push({ id: Date.now(), type: EntityType.Cat, x: xPos, y: 0, z: 0, variant });
       } else if (entityType < 0.45) { // Fox 10%
         const foxSpeed = 0.2 + Math.random() * 0.2;
-        entities.current.push({ id: Date.now(), type: EntityType.Fox, x: xPos, y: 0, z: 0, vx: Math.random() > 0.5 ? foxSpeed : -foxSpeed });
+        entities.current.push({ id: Date.now(), type: EntityType.Fox, x: xPos, y: 0, z: 0, vx: Math.random() > 0.5 ? foxSpeed : -foxSpeed, variant });
       } else if (entityType < 0.50) { // Polar Bear 5%
-        entities.current.push({ id: Date.now(), type: EntityType.PolarBear, x: xPos, y: 0, z: 0 });
+        entities.current.push({ id: Date.now(), type: EntityType.PolarBear, x: xPos, y: 0, z: 0, variant });
       } else if (entityType < 0.55 && !isTurboActive) { // PowerUp 5%, only if not already active
         entities.current.push({ id: Date.now(), type: EntityType.PowerUp, x: xPos, y: 0, z: 0 });
       } else { // Carrot ~45%
