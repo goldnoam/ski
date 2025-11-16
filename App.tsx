@@ -9,12 +9,12 @@ import SnowParticles from './components/SnowParticles';
 import Clouds from './components/Clouds';
 
 const soundUrls = {
-    start: 'https://cdn.pixabay.com/audio/2022/08/04/audio_39254b9d5c.mp3', // Level start
-    collect: 'https://cdn.pixabay.com/audio/2022/03/15/audio_732040a1b1.mp3', // Collect carrot
-    shoot: 'https://cdn.pixabay.com/audio/2021/08/04/audio_a29cf33159.mp3', // Shoot
-    hit: 'https://cdn.pixabay.com/audio/2022/03/10/audio_b4f0b09968.mp3', // Hit snowman
-    gameOver: 'https://cdn.pixabay.com/audio/2022/11/10/audio_f5572a129f.mp3', // Game over
-    jump: 'https://cdn.pixabay.com/audio/2022/01/23/audio_7172fe6433.mp3' // Jump
+    start: 'https://cdn.pixabay.com/audio/2022/11/17/audio_88f7633e29.mp3', // Level start
+    collect: 'https://cdn.pixabay.com/audio/2022/03/15/audio_a755a18a93.mp3', // Collect carrot
+    shoot: 'https://cdn.pixabay.com/audio/2022/03/19/audio_d13a619c96.mp3', // Shoot
+    hit: 'https://cdn.pixabay.com/audio/2022/03/13/audio_106a147e24.mp3', // Hit snowman
+    gameOver: 'https://cdn.pixabay.com/audio/2022/02/22/audio_24520556f8.mp3', // Game over
+    jump: 'https://cdn.pixabay.com/audio/2022/04/07/audio_42322f33c7.mp3' // Jump
 };
 
 
