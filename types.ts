@@ -2,8 +2,9 @@
 export enum EntityType {
   Snowman = 'snowman',
   Carrot = 'carrot',
-  Hill = 'hill',
   Bullet = 'bullet',
+  Husky = 'husky',
+  Cat = 'cat',
 }
 
 export interface GameEntity {

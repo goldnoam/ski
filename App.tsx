@@ -6,6 +6,7 @@ import Player from './components/Player';
 import GameEntityComponent from './components/GameEntityComponent';
 import UI from './components/UI';
 import SnowParticles from './components/SnowParticles';
+import Clouds from './components/Clouds';
 
 const soundUrls = {
     start: 'https://cdn.pixabay.com/audio/2022/08/04/audio_39254b9d5c.mp3', // Level start
@@ -29,10 +30,12 @@ const App: React.FC = () => {
   const playerState = useRef<PlayerState>({ y: 0, isJumping: false, jumpVelocity: 0, x: 0 });
   const entities = useRef<GameEntity[]>([]);
   const moveState = useRef({ left: false, right: false });
+  const fireState = useRef({ active: false });
   const gameSpeed = useRef(C.INITIAL_SPEED);
   const animationFrameId = useRef<number>();
   const lastTime = useRef<number>(0);
   const timeSinceLastSpawn = useRef(0);
+  const timeSinceLastShot = useRef(0);
   
   const playSound = useCallback((sound: keyof typeof soundUrls) => {
     const audio = new Audio(soundUrls[sound]);
@@ -78,20 +81,6 @@ const App: React.FC = () => {
     }
   }, [playSound, gameStatus]);
 
-  const handleShoot = useCallback(() => {
-    if (gameStatus !== 'playing') return;
-    entities.current.push({
-      id: Date.now(),
-      type: EntityType.Bullet,
-      x: playerState.current.x,
-      y: C.PLAYER_HEIGHT / 2, // originate from player center
-      z: C.PLAYER_Z_POSITION - 1, // Spawn just in front of the player
-    });
-    playSound('shoot');
-    setIsShooting(true);
-    setTimeout(() => setIsShooting(false), 200);
-  }, [playSound, gameStatus]);
-
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (gameStatus !== 'playing') return;
     const screenWidth = window.innerWidth;
@@ -130,26 +119,45 @@ const App: React.FC = () => {
         const zIncrement = e.type === EntityType.Bullet ? -gameSpeed.current * 5 * deltaTime : gameSpeed.current * deltaTime;
         return {...e, z: e.z + zIncrement};
     }).filter(e => e.z > -5 && e.z < C.MAX_Z);
+    
+    // Turbo fire
+    timeSinceLastShot.current += deltaTime;
+    if (fireState.current.active && timeSinceLastShot.current > C.TURBO_FIRE_RATE) {
+        timeSinceLastShot.current = 0;
+        entities.current.push({
+            id: Date.now(),
+            type: EntityType.Bullet,
+            x: playerState.current.x,
+            y: C.PLAYER_HEIGHT / 2,
+            z: C.PLAYER_Z_POSITION - 1,
+        });
+        playSound('shoot');
+        setIsShooting(true);
+        setTimeout(() => setIsShooting(false), 100);
+    }
 
     // Collision detection
     let scoreUpdate = 0;
     const idsToRemove = new Set<number>();
     
+    const enemyTypes = [EntityType.Snowman, EntityType.Husky, EntityType.Cat];
+
     // Player-entity collision
     entities.current.forEach(entity => {
         if (entity.z > C.PLAYER_Z_POSITION - 5 && entity.z < C.PLAYER_Z_POSITION + 5) {
             const getEntityWidth = (type: EntityType) => {
-                if (type === EntityType.Hill) return C.HILL_WIDTH;
                 if (type === EntityType.Snowman) return C.SNOWMAN_WIDTH;
+                if (type === EntityType.Husky) return C.HUSKY_WIDTH;
+                if (type === EntityType.Cat) return C.CAT_WIDTH;
                 if (type === EntityType.Carrot) return C.CARROT_WIDTH;
                 return 0;
             }
             const isCollidingX = Math.abs(entity.x - playerState.current.x) < (C.PLAYER_WIDTH + getEntityWidth(entity.type)) / 2;
             
             if (isCollidingX) {
-                if ((entity.type === EntityType.Hill || entity.type === EntityType.Snowman) && playerState.current.y < C.PLAYER_HEIGHT) {
+                if (enemyTypes.includes(entity.type) && playerState.current.y < C.PLAYER_HEIGHT) {
                     playSound('hit');
-                    setScore(s => Math.max(0, s - C.HILL_COLLISION_PENALTY));
+                    setScore(s => Math.max(0, s - C.ENEMY_COLLISION_PENALTY));
                     setLives(l => {
                         const newLives = l - 1;
                         if (newLives <= 0) {
@@ -170,20 +178,23 @@ const App: React.FC = () => {
         }
     });
 
-    // Bullet-snowman collision
+    // Bullet-enemy collision
     const bullets = entities.current.filter(e => e.type === EntityType.Bullet);
-    const snowmen = entities.current.filter(e => e.type === EntityType.Snowman);
+    const enemies = entities.current.filter(e => enemyTypes.includes(e.type));
     bullets.forEach(bullet => {
         if(idsToRemove.has(bullet.id)) return;
-        snowmen.forEach(snowman => {
-            if(idsToRemove.has(snowman.id)) return;
-            const zClose = Math.abs(bullet.z - snowman.z) < 5;
-            const xClose = Math.abs(bullet.x - snowman.x) < (C.BULLET_WIDTH + C.SNOWMAN_WIDTH) / 2;
+        enemies.forEach(enemy => {
+            if(idsToRemove.has(enemy.id)) return;
+            const zClose = Math.abs(bullet.z - enemy.z) < 5;
+            const xClose = Math.abs(bullet.x - enemy.x) < (C.BULLET_WIDTH + (enemy.type === EntityType.Snowman ? C.SNOWMAN_WIDTH : enemy.type === EntityType.Husky ? C.HUSKY_WIDTH : C.CAT_WIDTH)) / 2;
             if(zClose && xClose) {
-                scoreUpdate += C.SNOWMAN_SCORE;
+                if (enemy.type === EntityType.Snowman) scoreUpdate += C.SNOWMAN_SCORE;
+                if (enemy.type === EntityType.Husky) scoreUpdate += C.HUSKY_SCORE;
+                if (enemy.type === EntityType.Cat) scoreUpdate += C.CAT_SCORE;
+                
                 playSound('hit');
                 idsToRemove.add(bullet.id);
-                idsToRemove.add(snowman.id);
+                idsToRemove.add(enemy.id);
             }
         });
     });
@@ -200,11 +211,13 @@ const App: React.FC = () => {
       timeSinceLastSpawn.current = 0;
       const entityType = Math.random();
       const xPos = Math.random() * 80 - 40;
-      if (entityType < 0.3) {
-        entities.current.push({ id: Date.now(), type: EntityType.Hill, x: xPos, y: 0, z: 0 });
-      } else if (entityType < 0.65) {
+      if (entityType < 0.25) { // Snowman 25%
         entities.current.push({ id: Date.now(), type: EntityType.Snowman, x: xPos, y: 0, z: 0 });
-      } else {
+      } else if (entityType < 0.40) { // Husky 15%
+        entities.current.push({ id: Date.now(), type: EntityType.Husky, x: xPos, y: 0, z: 0 });
+      } else if (entityType < 0.50) { // Cat 10%
+        entities.current.push({ id: Date.now(), type: EntityType.Cat, x: xPos, y: 0, z: 0 });
+      } else { // Carrot 50%
         entities.current.push({ id: Date.now(), type: EntityType.Carrot, x: xPos, y: 0, z: 0 });
       }
     }
@@ -256,14 +269,16 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
       if (e.code === 'KeyP') togglePause();
       if (gameStatus !== 'playing') return;
       if (e.code === 'Space') handleJump();
-      if (e.code === 'KeyF') handleShoot();
+      if (e.code === 'KeyF') fireState.current.active = true;
       if (e.code === 'ArrowLeft') moveState.current.left = true;
       if (e.code === 'ArrowRight') moveState.current.right = true;
     };
      const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'KeyF') fireState.current.active = false;
       if (e.code === 'ArrowLeft') moveState.current.left = false;
       if (e.code === 'ArrowRight') moveState.current.right = false;
     };
@@ -277,7 +292,7 @@ const App: React.FC = () => {
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('mousemove', handleMouseMove);
     };
-  }, [handleJump, handleShoot, handleMouseMove, gameStatus, togglePause]);
+  }, [handleJump, handleMouseMove, gameStatus, togglePause]);
 
     // Mobile controls handlers
     const handleMoveStart = (direction: 'left' | 'right', e: React.TouchEvent) => {
@@ -288,16 +303,28 @@ const App: React.FC = () => {
         e.preventDefault();
         moveState.current[direction] = false;
     };
-    const handleAction = (action: 'jump' | 'shoot', e: React.TouchEvent) => {
+    const handleActionStart = (action: 'jump' | 'shoot', e: React.TouchEvent) => {
         e.preventDefault();
         if (action === 'jump') handleJump();
-        if (action === 'shoot') handleShoot();
+        if (action === 'shoot') fireState.current.active = true;
+    }
+    const handleActionEnd = (action: 'shoot', e: React.TouchEvent) => {
+        e.preventDefault();
+        if (action === 'shoot') fireState.current.active = false;
     }
   
+  const currentColors = C.LEVEL_COLORS[(level - 1) % C.LEVEL_COLORS.length];
+
   return (
     <main className="h-screen w-screen bg-slate-900 text-white flex flex-col items-center justify-center overflow-hidden font-mono select-none">
-      <div className="w-full max-w-4xl aspect-[4/3] relative bg-gradient-to-b from-indigo-900 to-slate-800 overflow-hidden border-4 border-slate-700 shadow-2xl" style={{ perspective: '800px' }}>
+      <div className="w-full max-w-4xl aspect-[4/3] relative overflow-hidden border-4 border-slate-700 shadow-2xl" 
+        style={{ 
+          perspective: '800px',
+          background: `linear-gradient(to bottom, ${currentColors.from}, ${currentColors.to})`
+        }}
+      >
         <div className="absolute inset-0" style={{ transformStyle: 'preserve-3d' }}>
+            <Clouds />
             <SnowParticles />
             <div className="absolute inset-0 bg-slate-400" style={{ transform: 'translateY(40%) rotateX(60deg)' }}></div>
 
@@ -325,8 +352,8 @@ const App: React.FC = () => {
             </div>
             {/* Action Buttons */}
             <div className="flex gap-2 pointer-events-auto">
-                <button onTouchStart={(e) => handleAction('shoot', e)} className="w-16 h-16 bg-red-500/50 active:bg-red-500/70 rounded-full font-bold text-xl">SHOOT</button>
-                <button onTouchStart={(e) => handleAction('jump', e)} className="w-16 h-16 bg-blue-500/50 active:bg-blue-500/70 rounded-full font-bold text-xl">JUMP</button>
+                <button onTouchStart={(e) => handleActionStart('shoot', e)} onTouchEnd={(e) => handleActionEnd('shoot', e)} className="w-16 h-16 bg-red-500/50 active:bg-red-500/70 rounded-full font-bold text-xl">SHOOT</button>
+                <button onTouchStart={(e) => handleActionStart('jump', e)} className="w-16 h-16 bg-blue-500/50 active:bg-blue-500/70 rounded-full font-bold text-xl">JUMP</button>
             </div>
         </div>
         )}
