@@ -15,6 +15,8 @@ export const CARROT_SCORE = 10;
 export const SNOWMAN_SCORE = 50;
 export const HUSKY_SCORE = 75;
 export const CAT_SCORE = 100;
+export const FOX_SCORE = 125;
+export const POLAR_BEAR_SCORE = 200;
 export const ENEMY_COLLISION_PENALTY = 100;
 export const INITIAL_LIVES = 5;
 
@@ -25,11 +27,16 @@ export const PLAYER_HEIGHT = 10;
 export const SNOWMAN_WIDTH = 10;
 export const HUSKY_WIDTH = 12;
 export const CAT_WIDTH = 8;
+export const FOX_WIDTH = 10;
+export const POLAR_BEAR_WIDTH = 15;
 export const CARROT_WIDTH = 5;
 export const BULLET_WIDTH = 3;
+export const POWERUP_WIDTH = 8;
 
 // Firing
 export const TURBO_FIRE_RATE = 150; // ms
+export const SUPER_TURBO_FIRE_RATE = 50; // ms
+export const TURBO_DURATION = 5000; // ms
 
 // Visuals
 export const LEVEL_COLORS = [

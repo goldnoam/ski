@@ -9,16 +9,25 @@ interface UIProps {
   gameStatus: GameStatus;
   lives: number;
   highScores: number[];
+  isSoundOn: boolean;
+  isTurboActive: boolean;
   onStart: () => void;
   onTogglePause: () => void;
+  onToggleSound: () => void;
 }
 
-const UI: React.FC<UIProps> = ({ score, level, timeLeft, gameStatus, lives, highScores, onStart, onTogglePause }) => {
+const UI: React.FC<UIProps> = ({ score, level, timeLeft, gameStatus, lives, highScores, isSoundOn, isTurboActive, onStart, onTogglePause, onToggleSound }) => {
   return (
     <div className="absolute inset-0 pointer-events-none text-white font-bold select-none">
       {/* Top HUD */}
       <div className="absolute top-4 left-4 right-4 flex justify-between items-center text-xl md:text-2xl p-2 bg-black/30 rounded-lg">
-        <div className="flex-1">Score: {score}</div>
+        <div className="flex-1 flex items-center gap-3">
+          <span>Score: {score}</span>
+           {isTurboActive && <span className="text-yellow-300 text-sm font-black animate-pulse">TURBO!</span>}
+           <button onClick={onToggleSound} className="pointer-events-auto text-2xl leading-none" aria-label={isSoundOn ? 'Mute sound' : 'Unmute sound'}>
+            {isSoundOn ? '🔊' : '🔇'}
+          </button>
+        </div>
         <div className="flex-1 text-center">Level: {level}</div>
         <div className="flex-1 text-center">Lives: {'❤️'.repeat(lives)}</div>
         <div className="flex-1 text-right">Time: {timeLeft}</div>
@@ -39,6 +48,7 @@ const UI: React.FC<UIProps> = ({ score, level, timeLeft, gameStatus, lives, high
               >
                 Resume
               </button>
+              <p className="mt-4 text-slate-300 text-lg">or press SPACE / ENTER</p>
             </>
           )}
           {(gameStatus === 'idle' || gameStatus === 'gameOver') && (
@@ -70,6 +80,7 @@ const UI: React.FC<UIProps> = ({ score, level, timeLeft, gameStatus, lives, high
               >
                 {gameStatus === 'idle' ? 'Start Game' : 'Play Again'}
               </button>
+              <p className="mt-4 text-slate-300 text-lg">or press SPACE / ENTER</p>
             </>
           )}
         </div>

@@ -5,6 +5,9 @@ export enum EntityType {
   Bullet = 'bullet',
   Husky = 'husky',
   Cat = 'cat',
+  Fox = 'fox',
+  PolarBear = 'polar_bear',
+  PowerUp = 'powerup',
 }
 
 export interface GameEntity {
@@ -13,6 +16,7 @@ export interface GameEntity {
   x: number; // position across the screen (-50 to 50)
   z: number; // position down the slope (0 to 100)
   y: number; // height off the ground
+  vx?: number; // horizontal velocity
 }
 
 export interface PlayerState {

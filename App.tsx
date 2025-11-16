@@ -9,12 +9,13 @@ import SnowParticles from './components/SnowParticles';
 import Clouds from './components/Clouds';
 
 const soundUrls = {
-    start: 'https://cdn.pixabay.com/audio/2022/11/17/audio_88f7633e29.mp3', // Level start
-    collect: 'https://cdn.pixabay.com/audio/2022/03/15/audio_a755a18a93.mp3', // Collect carrot
-    shoot: 'https://cdn.pixabay.com/audio/2022/03/19/audio_d13a619c96.mp3', // Shoot
-    hit: 'https://cdn.pixabay.com/audio/2022/03/13/audio_106a147e24.mp3', // Hit snowman
-    gameOver: 'https://cdn.pixabay.com/audio/2022/02/22/audio_24520556f8.mp3', // Game over
-    jump: 'https://cdn.pixabay.com/audio/2022/04/07/audio_42322f33c7.mp3' // Jump
+    start: 'https://actions.google.com/sounds/v1/games/level_up.ogg',
+    collect: 'https://actions.google.com/sounds/v1/coins/coin_gain.ogg',
+    shoot: 'https://actions.google.com/sounds/v1/weapons/laser_shoot.ogg',
+    hit: 'https://actions.google.com/sounds/v1/impacts/hit_by_projectile.ogg',
+    gameOver: 'https://actions.google.com/sounds/v1/games/game_over_lose.ogg',
+    jump: 'https://actions.google.com/sounds/v1/impacts/jump_land.ogg',
+    powerUp: 'https://actions.google.com/sounds/v1/power_ups/power_up_1.ogg',
 };
 
 
@@ -25,7 +26,16 @@ const App: React.FC = () => {
   const [timeLeft, setTimeLeft] = useState(C.LEVEL_DURATION);
   const [lives, setLives] = useState(C.INITIAL_LIVES);
   const [isShooting, setIsShooting] = useState(false);
+  const [isTurboActive, setIsTurboActive] = useState(false);
   const [highScores, setHighScores] = useState<number[]>([]);
+  const [isSoundOn, setIsSoundOn] = useState<boolean>(() => {
+    try {
+        const storedSoundPref = localStorage.getItem('skiShooterSoundOn');
+        return storedSoundPref !== null ? JSON.parse(storedSoundPref) : true;
+    } catch {
+        return true;
+    }
+  });
   
   const playerState = useRef<PlayerState>({ y: 0, isJumping: false, jumpVelocity: 0, x: 0 });
   const entities = useRef<GameEntity[]>([]);
@@ -36,15 +46,24 @@ const App: React.FC = () => {
   const lastTime = useRef<number>(0);
   const timeSinceLastSpawn = useRef(0);
   const timeSinceLastShot = useRef(0);
+  const turboTimeoutRef = useRef<number>();
+  const failedSounds = useRef(new Set<keyof typeof soundUrls>());
   
   const playSound = useCallback((sound: keyof typeof soundUrls) => {
+    if (!isSoundOn || failedSounds.current.has(sound)) return;
+
     const audio = new Audio(soundUrls[sound]);
     audio.play().catch(e => {
-      if (e.name !== 'NotAllowedError' && e.name !== 'AbortError') {
+      // NotAllowedError is common if user hasn't interacted with page yet.
+      // We don't want to disable sound for that.
+      if (e.name === 'NotSupportedError' || e.name === 'AbortError') {
+        failedSounds.current.add(sound);
+        console.warn(`Sound "${sound}" failed to load and has been disabled for this session. Error: ${e.message}`);
+      } else if (e.name !== 'NotAllowedError') {
         console.error(`Audio play failed for sound "${sound}":`, e);
       }
     });
-  }, []);
+  }, [isSoundOn]);
 
   const updateHighScores = useCallback((newScore: number) => {
     const scores = [...highScores, newScore];
@@ -72,6 +91,10 @@ const App: React.FC = () => {
         setGameStatus(s => s === 'playing' ? 'paused' : 'playing');
     }
   }, [gameStatus]);
+
+  const toggleSound = useCallback(() => {
+    setIsSoundOn(prev => !prev);
+  }, []);
 
   const handleJump = useCallback(() => {
     if (!playerState.current.isJumping && gameStatus === 'playing') {
@@ -117,12 +140,20 @@ const App: React.FC = () => {
     // Update entities
     entities.current = entities.current.map(e => {
         const zIncrement = e.type === EntityType.Bullet ? -gameSpeed.current * 5 * deltaTime : gameSpeed.current * deltaTime;
-        return {...e, z: e.z + zIncrement};
+        let newX = e.x;
+        if (e.type === EntityType.Fox && e.vx) {
+            newX += e.vx * (deltaTime / 16); // Frame-rate independent movement
+            if ((newX > 45 && e.vx > 0) || (newX < -45 && e.vx < 0)) {
+                e.vx *= -1;
+            }
+        }
+        return {...e, z: e.z + zIncrement, x: newX};
     }).filter(e => e.z > -5 && e.z < C.MAX_Z);
     
     // Turbo fire
     timeSinceLastShot.current += deltaTime;
-    if (fireState.current.active && timeSinceLastShot.current > C.TURBO_FIRE_RATE) {
+    const currentFireRate = isTurboActive ? C.SUPER_TURBO_FIRE_RATE : C.TURBO_FIRE_RATE;
+    if (fireState.current.active && timeSinceLastShot.current > currentFireRate) {
         timeSinceLastShot.current = 0;
         entities.current.push({
             id: Date.now(),
@@ -140,7 +171,7 @@ const App: React.FC = () => {
     let scoreUpdate = 0;
     const idsToRemove = new Set<number>();
     
-    const enemyTypes = [EntityType.Snowman, EntityType.Husky, EntityType.Cat];
+    const enemyTypes = [EntityType.Snowman, EntityType.Husky, EntityType.Cat, EntityType.Fox, EntityType.PolarBear];
 
     // Player-entity collision
     entities.current.forEach(entity => {
@@ -149,7 +180,10 @@ const App: React.FC = () => {
                 if (type === EntityType.Snowman) return C.SNOWMAN_WIDTH;
                 if (type === EntityType.Husky) return C.HUSKY_WIDTH;
                 if (type === EntityType.Cat) return C.CAT_WIDTH;
+                if (type === EntityType.Fox) return C.FOX_WIDTH;
+                if (type === EntityType.PolarBear) return C.POLAR_BEAR_WIDTH;
                 if (type === EntityType.Carrot) return C.CARROT_WIDTH;
+                if (type === EntityType.PowerUp) return C.POWERUP_WIDTH;
                 return 0;
             }
             const isCollidingX = Math.abs(entity.x - playerState.current.x) < (C.PLAYER_WIDTH + getEntityWidth(entity.type)) / 2;
@@ -174,6 +208,14 @@ const App: React.FC = () => {
                     playSound('collect');
                     idsToRemove.add(entity.id);
                 }
+                 if (entity.type === EntityType.PowerUp) {
+                    playSound('powerUp');
+                    idsToRemove.add(entity.id);
+                    if (!isTurboActive) setIsTurboActive(true);
+                    
+                    if (turboTimeoutRef.current) clearTimeout(turboTimeoutRef.current);
+                    turboTimeoutRef.current = window.setTimeout(() => setIsTurboActive(false), C.TURBO_DURATION);
+                }
             }
         }
     });
@@ -186,11 +228,18 @@ const App: React.FC = () => {
         enemies.forEach(enemy => {
             if(idsToRemove.has(enemy.id)) return;
             const zClose = Math.abs(bullet.z - enemy.z) < 5;
-            const xClose = Math.abs(bullet.x - enemy.x) < (C.BULLET_WIDTH + (enemy.type === EntityType.Snowman ? C.SNOWMAN_WIDTH : enemy.type === EntityType.Husky ? C.HUSKY_WIDTH : C.CAT_WIDTH)) / 2;
+            const xClose = Math.abs(bullet.x - enemy.x) < (C.BULLET_WIDTH + (
+                enemy.type === EntityType.Snowman ? C.SNOWMAN_WIDTH :
+                enemy.type === EntityType.Husky ? C.HUSKY_WIDTH :
+                enemy.type === EntityType.Cat ? C.CAT_WIDTH :
+                enemy.type === EntityType.Fox ? C.FOX_WIDTH : C.POLAR_BEAR_WIDTH
+            )) / 2;
             if(zClose && xClose) {
                 if (enemy.type === EntityType.Snowman) scoreUpdate += C.SNOWMAN_SCORE;
                 if (enemy.type === EntityType.Husky) scoreUpdate += C.HUSKY_SCORE;
                 if (enemy.type === EntityType.Cat) scoreUpdate += C.CAT_SCORE;
+                if (enemy.type === EntityType.Fox) scoreUpdate += C.FOX_SCORE;
+                if (enemy.type === EntityType.PolarBear) scoreUpdate += C.POLAR_BEAR_SCORE;
                 
                 playSound('hit');
                 idsToRemove.add(bullet.id);
@@ -211,20 +260,28 @@ const App: React.FC = () => {
       timeSinceLastSpawn.current = 0;
       const entityType = Math.random();
       const xPos = Math.random() * 80 - 40;
-      if (entityType < 0.25) { // Snowman 25%
+
+      if (entityType < 0.20) { // Snowman 20%
         entities.current.push({ id: Date.now(), type: EntityType.Snowman, x: xPos, y: 0, z: 0 });
-      } else if (entityType < 0.40) { // Husky 15%
+      } else if (entityType < 0.30) { // Husky 10%
         entities.current.push({ id: Date.now(), type: EntityType.Husky, x: xPos, y: 0, z: 0 });
-      } else if (entityType < 0.50) { // Cat 10%
+      } else if (entityType < 0.35) { // Cat 5%
         entities.current.push({ id: Date.now(), type: EntityType.Cat, x: xPos, y: 0, z: 0 });
-      } else { // Carrot 50%
+      } else if (entityType < 0.45) { // Fox 10%
+        const foxSpeed = 0.2 + Math.random() * 0.2;
+        entities.current.push({ id: Date.now(), type: EntityType.Fox, x: xPos, y: 0, z: 0, vx: Math.random() > 0.5 ? foxSpeed : -foxSpeed });
+      } else if (entityType < 0.50) { // Polar Bear 5%
+        entities.current.push({ id: Date.now(), type: EntityType.PolarBear, x: xPos, y: 0, z: 0 });
+      } else if (entityType < 0.55 && !isTurboActive) { // PowerUp 5%, only if not already active
+        entities.current.push({ id: Date.now(), type: EntityType.PowerUp, x: xPos, y: 0, z: 0 });
+      } else { // Carrot ~45%
         entities.current.push({ id: Date.now(), type: EntityType.Carrot, x: xPos, y: 0, z: 0 });
       }
     }
 
     forceUpdate();
     animationFrameId.current = requestAnimationFrame(gameLoop);
-  }, [gameStatus, level, playSound, score, updateHighScores]);
+  }, [gameStatus, level, playSound, score, updateHighScores, isTurboActive]);
   
   const [, setTick] = useState(0);
   const forceUpdate = useCallback(() => setTick(tick => tick + 1), []);
@@ -239,6 +296,17 @@ const App: React.FC = () => {
         console.error("Failed to load high scores:", error);
     }
   }, []);
+
+  useEffect(() => {
+    localStorage.setItem('skiShooterSoundOn', JSON.stringify(isSoundOn));
+  }, [isSoundOn]);
+  
+  useEffect(() => {
+    if (gameStatus !== 'playing') {
+      if (turboTimeoutRef.current) clearTimeout(turboTimeoutRef.current);
+      setIsTurboActive(false);
+    }
+  }, [gameStatus]);
 
   useEffect(() => {
     if (gameStatus === 'playing') {
@@ -270,8 +338,29 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.repeat) return;
-      if (e.code === 'KeyP') togglePause();
-      if (gameStatus !== 'playing') return;
+
+      // Global pause key
+      if (e.code === 'KeyP') {
+        togglePause();
+        return;
+      }
+
+      // State-specific key handling
+      if (gameStatus === 'paused') {
+        if (e.code === 'Space' || e.code === 'Enter') {
+          togglePause();
+        }
+        return; // Block game input while paused
+      }
+      
+      if (gameStatus === 'idle' || gameStatus === 'gameOver') {
+        if (e.code === 'Space' || e.code === 'Enter') {
+          startGame();
+        }
+        return; // Block game input in these states
+      }
+
+      // Game is 'playing'
       if (e.code === 'Space') handleJump();
       if (e.code === 'KeyF') fireState.current.active = true;
       if (e.code === 'ArrowLeft') moveState.current.left = true;
@@ -291,8 +380,9 @@ const App: React.FC = () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('mousemove', handleMouseMove);
+      if (turboTimeoutRef.current) clearTimeout(turboTimeoutRef.current);
     };
-  }, [handleJump, handleMouseMove, gameStatus, togglePause]);
+  }, [handleJump, handleMouseMove, gameStatus, togglePause, startGame]);
 
     // Mobile controls handlers
     const handleMoveStart = (direction: 'left' | 'right', e: React.TouchEvent) => {
@@ -340,7 +430,19 @@ const App: React.FC = () => {
               gameStatus={gameStatus}
             />
         </div>
-        <UI score={score} level={level} timeLeft={timeLeft} gameStatus={gameStatus} lives={lives} highScores={highScores} onStart={startGame} onTogglePause={togglePause} />
+        <UI 
+          score={score} 
+          level={level} 
+          timeLeft={timeLeft} 
+          gameStatus={gameStatus} 
+          lives={lives} 
+          highScores={highScores} 
+          isSoundOn={isSoundOn}
+          isTurboActive={isTurboActive}
+          onStart={startGame} 
+          onTogglePause={togglePause}
+          onToggleSound={toggleSound}
+        />
       </div>
 
        {gameStatus === 'playing' && (
